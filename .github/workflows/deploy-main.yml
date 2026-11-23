@@ -1,0 +1,28 @@
+# Merge to main -> unit tests -> deploy + run in test -> (approval) -> deploy to prod.
+# Prod is not run here: its daily schedule is unpaused, so it runs on schedule.
+
+name: deploy-main
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    uses: ./.github/workflows/ci.yml
+
+  test:
+    needs: unit-tests
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      target: test
+    secrets: inherit
+
+  prod:
+    needs: test
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      target: prod
+      run_job: false
+    secrets: inherit

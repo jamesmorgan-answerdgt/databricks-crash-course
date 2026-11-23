@@ -1,0 +1,52 @@
+# Reusable workflow: deploy the bundle to one target and optionally run the job.
+# Called by deploy-dev.yml and deploy-main.yml; not triggered on its own.
+#
+# Each target maps to a GitHub Environment of the same name (Settings >
+# Environments) holding that environment's secrets:
+#   DATABRICKS_HOST   e.g. https://<workspace>.cloud.databricks.com
+#   DATABRICKS_TOKEN  token for the deploying identity (ideally a service principal)
+# Add "Required reviewers" to the prod environment to get a manual approval gate.
+
+name: deploy
+
+on:
+  workflow_call:
+    inputs:
+      target:
+        description: Bundle target (dev, test or prod)
+        required: true
+        type: string
+      run_job:
+        description: Run the ETL job (incl. data quality checks) after deploying
+        required: false
+        default: true
+        type: boolean
+
+jobs:
+  deploy:
+    name: deploy to ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    environment: ${{ inputs.target }}
+    # Never run two deploys to the same environment at once.
+    concurrency:
+      group: databricks-${{ inputs.target }}
+      cancel-in-progress: false
+    env:
+      DATABRICKS_HOST: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      DATABRICKS_BUNDLE_ENV: ${{ inputs.target }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: databricks/setup-cli@main
+
+      - name: Validate bundle
+        run: databricks bundle validate
+
+      - name: Deploy bundle
+        run: databricks bundle deploy
+
+      - name: Run ETL job and data quality checks
+        if: ${{ inputs.run_job }}
+        # Blocks until the run finishes; a failed task fails this step.
+        run: databricks bundle run suppliers_etl
