@@ -1,0 +1,78 @@
+# Databricks Asset Bundle: the single source of truth for what gets deployed
+# (code, jobs, schedules) and how it differs per environment.
+#
+#   databricks bundle validate -t <target>
+#   databricks bundle deploy   -t <target>
+#   databricks bundle run suppliers_etl -t <target>
+#
+# Targets:
+#   local - your personal sandbox, deployed from your laptop (default)
+#   dev   - shared dev environment, deployed by CI on merge to the `dev` branch
+#   test  - deployed by CI on merge to `main`, then the job is run end-to-end
+#   prod  - deployed by CI on merge to `main` after `test` passes (approval gate)
+
+bundle:
+  name: databricks_crash_course
+
+include:
+  - resources/*.yml
+
+# Everything tracked by git is uploaded except the paths below.
+sync:
+  exclude:
+    - .github/**
+    - tests/unit/**
+    - exploration/**
+
+variables:
+  catalog:
+    description: Unity Catalog catalog that holds this environment's schemas.
+    default: workspace
+  schema_prefix:
+    description: >-
+      Prefix for the bronze / silver / gold / ops schemas, e.g. "dev_" gives
+      dev_bronze, dev_silver, dev_gold, dev_ops. With one catalog per environment
+      you could set this to "" instead.
+  schedule_pause_status:
+    description: Whether the job's daily schedule is active in this environment.
+    default: PAUSED
+
+targets:
+  local:
+    default: true
+    # development mode prefixes resource names with "[dev <you>]", pauses
+    # schedules and deploys into your own home folder.
+    mode: development
+    variables:
+      schema_prefix: local_
+
+  dev:
+    workspace:
+      # host: https://<dev-workspace>.cloud.databricks.com  (or DATABRICKS_HOST in CI)
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    presets:
+      name_prefix: "[dev] "
+    variables:
+      schema_prefix: dev_
+
+  test:
+    workspace:
+      # host: https://<test-workspace>.cloud.databricks.com
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    presets:
+      name_prefix: "[test] "
+    variables:
+      schema_prefix: test_
+
+  prod:
+    mode: production
+    workspace:
+      # host: https://<prod-workspace>.cloud.databricks.com
+      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    # In a real setup, run production jobs as a service principal rather than
+    # whoever deployed them:
+    # run_as:
+    #   service_principal_name: <application-id>
+    variables:
+      schema_prefix: prod_
+      schedule_pause_status: UNPAUSED

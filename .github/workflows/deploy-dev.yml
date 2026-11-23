@@ -1,0 +1,19 @@
+# Merge to dev -> unit tests -> deploy to dev -> run the job + data quality checks.
+
+name: deploy-dev
+
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+jobs:
+  unit-tests:
+    uses: ./.github/workflows/ci.yml
+
+  dev:
+    needs: unit-tests
+    uses: ./.github/workflows/_deploy.yml
+    with:
+      target: dev
+    secrets: inherit
