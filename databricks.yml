@@ -49,7 +49,7 @@ targets:
   dev:
     workspace:
       # host: https://<dev-workspace>.cloud.databricks.com  (or DATABRICKS_HOST in CI)
-      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Demo/.bundle/${bundle.name}/${bundle.target}
     permissions:
       - level: CAN_MANAGE
         group_name: users
@@ -61,7 +61,7 @@ targets:
   test:
     workspace:
       # host: https://<test-workspace>.cloud.databricks.com
-      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Demo/.bundle/${bundle.name}/${bundle.target}
     presets:
       name_prefix: "[test] "
     variables:
@@ -71,7 +71,7 @@ targets:
     mode: production
     workspace:
       # host: https://<prod-workspace>.cloud.databricks.com
-      root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/Demo/.bundle/${bundle.name}/${bundle.target}
     # In a real setup, run production jobs as a service principal rather than
     # whoever deployed them:
     # run_as:
