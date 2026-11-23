@@ -26,7 +26,7 @@ from pathlib import Path
 from string import Template
 
 FILE_PATTERN = re.compile(r"^V(\d+)__([A-Za-z0-9_]+)\.sql$")
-LAYERS = ("bronze", "silver", "gold", "ops")
+LAYERS = ("bronze", "silver", "gold", "ops", "landing")
 
 
 @dataclass(frozen=True)
