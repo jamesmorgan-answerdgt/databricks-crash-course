@@ -25,6 +25,7 @@ def test_schema_names_use_prefix():
         "silver_schema": "dev_silver",
         "gold_schema": "dev_gold",
         "ops_schema": "dev_ops",
+        "landing_schema": "dev_landing"
     }
 
 
