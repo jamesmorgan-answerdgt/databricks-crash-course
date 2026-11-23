@@ -50,6 +50,9 @@ targets:
     workspace:
       # host: https://<dev-workspace>.cloud.databricks.com  (or DATABRICKS_HOST in CI)
       root_path: /Workspace/Shared/.bundle/${bundle.name}/${bundle.target}
+    permissions:
+      - level: CAN_MANAGE
+        group_name: users
     presets:
       name_prefix: "[dev] "
     variables:
