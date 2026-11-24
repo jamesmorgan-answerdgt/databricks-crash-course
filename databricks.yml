@@ -67,7 +67,7 @@ targets:
   test:
     workspace:
       # host: https://<test-workspace>.cloud.databricks.com
-      root_path: /Workspace/Demo/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/test/.bundle/${bundle.name}/${bundle.target}
     presets:
       name_prefix: "[test] "
     variables:
@@ -77,7 +77,7 @@ targets:
     mode: production
     workspace:
       # host: https://<prod-workspace>.cloud.databricks.com
-      root_path: /Workspace/Demo/.bundle/${bundle.name}/${bundle.target}
+      root_path: /Workspace/prod/.bundle/${bundle.name}/${bundle.target}
     # In a real setup, run production jobs as a service principal rather than
     # whoever deployed them:
     # run_as:
