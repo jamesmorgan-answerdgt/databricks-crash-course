@@ -49,7 +49,6 @@ SOURCES = {
 
 # gold table -> primary key
 GOLD = {
-    "asian_suppliers": "supplier_id",
     "dim_franchises": "franchise_id",
     "dim_customers": "customer_id",
     "fact_transactions": "transaction_id",
@@ -70,12 +69,7 @@ for name, key in GOLD.items():
     checks[f"gold.{name}.{key} is unique"] = is_unique(table("gold", name), key)
 
 silver_suppliers = table("silver", "suppliers")
-gold_asian = table("gold", "asian_suppliers")
 fact = table("gold", "fact_transactions")
-
-checks["gold.asian_suppliers matches silver Asian suppliers"] = scalar(
-    f"SELECT count(*) FROM {gold_asian}"
-) == scalar(f"SELECT count(*) FROM {silver_suppliers} WHERE continent = 'Asia'")
 
 checks["gold.fact_transactions has every silver transaction"] = scalar(
     f"SELECT count(*) FROM {fact}"

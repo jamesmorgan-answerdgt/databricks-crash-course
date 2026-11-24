@@ -130,16 +130,6 @@ resources:
               - --schema-prefix=${var.schema_prefix}
 
         # --- gold --------------------------------------------------------
-        - task_key: gold_asian_suppliers
-          depends_on:
-            - task_key: silver_suppliers
-          environment_key: default
-          spark_python_task:
-            python_file: ../ETL/gold/asian_suppliers.py
-            parameters:
-              - --catalog=${var.catalog}
-              - --schema-prefix=${var.schema_prefix}
-
         - task_key: gold_dim_franchises
           depends_on:
             - task_key: silver_franchises
@@ -175,7 +165,6 @@ resources:
         # Fails the run (and therefore the CI deploy) if the data looks wrong.
         - task_key: data_quality_checks
           depends_on:
-            - task_key: gold_asian_suppliers
             - task_key: gold_dim_franchises
             - task_key: gold_dim_customers
             - task_key: gold_fact_transactions
