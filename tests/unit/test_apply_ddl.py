@@ -1,12 +1,79 @@
 """Unit tests for the DDL runner. No Spark needed; runs on every PR."""
 
+import re
 from pathlib import Path
 
 import pytest
 
-from apply_ddl import Migration, discover, pending, render, schema_names, split_statements
+from apply_ddl import (
+    Migration,
+    check_retry_safe,
+    discover,
+    pending,
+    render,
+    schema_names,
+    split_statements,
+)
 
 REPO_DDL_DIR = Path(__file__).resolve().parents[2] / "SQL" / "ddl"
+
+CREATE_TABLE = re.compile(r"^CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)", re.I)
+ALTER_TABLE = re.compile(r"^ALTER\s+TABLE\s+(\S+)", re.I)
+COLUMN_MAPPING = re.compile(r"'delta\.columnMapping\.mode'\s*=\s*'name'", re.I)
+
+
+def test_every_table_ends_up_with_column_mapping():
+    """Column mapping lets columns be renamed/dropped later without a rewrite.
+
+    Walk the migrations in order: a CREATE (OR REPLACE) resets a table's
+    properties, so it must set column mapping itself or a later ALTER must.
+    """
+    params = {"catalog": "c", **schema_names("dev_")}
+    has_mapping = {}
+    for m in discover(REPO_DDL_DIR):
+        for statement in split_statements(render(m.sql, params)):
+            if created := CREATE_TABLE.match(statement):
+                has_mapping[created.group(1)] = bool(COLUMN_MAPPING.search(statement))
+            elif (altered := ALTER_TABLE.match(statement)) and COLUMN_MAPPING.search(statement):
+                has_mapping[altered.group(1)] = True
+    missing = sorted(t for t, ok in has_mapping.items() if not ok)
+    assert has_mapping, "no tables found"
+    assert not missing, (
+        f"Tables without column mapping: {missing}. Add "
+        "TBLPROPERTIES ('delta.columnMapping.mode' = 'name') to their CREATE TABLE."
+    )
+
+
+@pytest.mark.parametrize(
+    "statement",
+    [
+        "ALTER TABLE t ADD COLUMN size STRING",
+        "ALTER TABLE t ADD COLUMNS (size STRING)",
+        "ALTER TABLE t RENAME COLUMN a TO b",
+        "ALTER TABLE t DROP COLUMN a",
+        "ALTER TABLE t ADD CONSTRAINT c CHECK (a > 0)",
+        "INSERT INTO t VALUES (1)",
+        "UPDATE t SET a = 1",
+    ],
+)
+def test_retry_unsafe_statement_must_be_alone(statement):
+    with pytest.raises(ValueError, match="its own"):
+        check_retry_safe(_migration(1, f"CREATE TABLE x (a INT);\n{statement};"))
+    check_retry_safe(_migration(1, f"{statement};"))  # fine on its own
+
+
+def test_retry_safe_statements_can_share_a_file():
+    check_retry_safe(
+        _migration(
+            1,
+            """
+            CREATE OR REPLACE TABLE t (address STRING);
+            ALTER TABLE t SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
+            ALTER TABLE t DROP COLUMN IF EXISTS old_col;
+            CREATE SCHEMA IF NOT EXISTS s;
+            """,
+        )
+    )
 
 
 def test_repo_ddl_files_are_valid_and_fully_templated():

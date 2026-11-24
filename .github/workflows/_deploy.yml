@@ -49,4 +49,4 @@ jobs:
       - name: Run ETL job and data quality checks
         if: ${{ inputs.run_job }}
         # Blocks until the run finishes; a failed task fails this step.
-        run: databricks bundle run suppliers_etl
+        run: databricks bundle run demo_etl_job

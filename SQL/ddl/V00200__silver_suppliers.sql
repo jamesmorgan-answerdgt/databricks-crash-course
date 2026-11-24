@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS `${catalog}`.`${silver_schema}`.suppliers (
+CREATE OR REPLACE TABLE `${catalog}`.`${silver_schema}`.suppliers (
   supplier_id   BIGINT NOT NULL,
   supplier_name STRING,
   ingredient    STRING,

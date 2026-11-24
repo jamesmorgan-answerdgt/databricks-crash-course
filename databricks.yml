@@ -3,7 +3,7 @@
 #
 #   databricks bundle validate -t <target>
 #   databricks bundle deploy   -t <target>
-#   databricks bundle run suppliers_etl -t <target>
+#   databricks bundle run demo_etl_job -t <target>
 #
 # Targets:
 #   local - your personal sandbox, deployed from your laptop (default)
@@ -36,6 +36,12 @@ variables:
   schedule_pause_status:
     description: Whether the job's daily schedule is active in this environment.
     default: PAUSED
+  seed_landing:
+    description: >-
+      Copy the samples.bakehouse tables into the landing volumes the first time
+      the job runs, so there is data to load. Off in prod, where an upstream
+      system drops the files.
+    default: "true"
 
 targets:
   local:
@@ -79,3 +85,4 @@ targets:
     variables:
       schema_prefix: prod_
       schedule_pause_status: UNPAUSED
+      seed_landing: "false"
