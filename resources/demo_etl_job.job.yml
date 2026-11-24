@@ -1,0 +1,187 @@
+# demo_etl_job: every source through the medallion layers in one job.
+#
+#   apply_ddl
+#     -> seed_landing      (dev/test only: drops the samples into the landing volumes once)
+#     -> bronze_<source>   (Auto Loader: only new landing files; all sources in parallel)
+#     -> silver_<source>   (only new bronze rows; each waits for its own bronze task)
+#     -> gold_*            (only silver changes; fact_transactions also waits for its dimensions)
+#     -> data_quality_checks
+#
+# Paths are relative to this file.
+
+resources:
+  jobs:
+    demo_etl_job:
+      name: demo_etl_job
+      max_concurrent_runs: 1
+
+      schedule:
+        quartz_cron_expression: "0 0 6 * * ?"
+        timezone_id: Europe/London
+        pause_status: ${var.schedule_pause_status}
+
+      # Serverless compute for every task.
+      environments:
+        - environment_key: default
+          spec:
+            environment_version: "2"
+
+      tasks:
+        - task_key: apply_ddl
+          environment_key: default
+          spark_python_task:
+            python_file: ../SQL/apply_ddl.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --ddl-dir=${workspace.file_path}/SQL/ddl
+
+        - task_key: seed_landing
+          depends_on:
+            - task_key: apply_ddl
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/landing/seed_landing.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+              - --enabled=${var.seed_landing}
+
+        # --- bronze ------------------------------------------------------
+        - task_key: bronze_suppliers
+          depends_on:
+            - task_key: seed_landing
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/bronze/ingest_suppliers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: bronze_franchises
+          depends_on:
+            - task_key: seed_landing
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/bronze/ingest_franchises.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: bronze_customers
+          depends_on:
+            - task_key: seed_landing
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/bronze/ingest_customers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: bronze_transactions
+          depends_on:
+            - task_key: seed_landing
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/bronze/ingest_transactions.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        # --- silver ------------------------------------------------------
+        - task_key: silver_suppliers
+          depends_on:
+            - task_key: bronze_suppliers
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/silver/clean_suppliers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: silver_franchises
+          depends_on:
+            - task_key: bronze_franchises
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/silver/clean_franchises.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: silver_customers
+          depends_on:
+            - task_key: bronze_customers
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/silver/clean_customers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: silver_transactions
+          depends_on:
+            - task_key: bronze_transactions
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/silver/clean_transactions.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        # --- gold --------------------------------------------------------
+        - task_key: gold_asian_suppliers
+          depends_on:
+            - task_key: silver_suppliers
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/gold/asian_suppliers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: gold_dim_franchises
+          depends_on:
+            - task_key: silver_franchises
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/gold/dim_franchises.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: gold_dim_customers
+          depends_on:
+            - task_key: silver_customers
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/gold/dim_customers.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        - task_key: gold_fact_transactions
+          depends_on:
+            - task_key: silver_transactions
+            - task_key: gold_dim_customers
+            - task_key: gold_dim_franchises
+          environment_key: default
+          spark_python_task:
+            python_file: ../ETL/gold/fact_transactions.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}
+
+        # Fails the run (and therefore the CI deploy) if the data looks wrong.
+        - task_key: data_quality_checks
+          depends_on:
+            - task_key: gold_asian_suppliers
+            - task_key: gold_dim_franchises
+            - task_key: gold_dim_customers
+            - task_key: gold_fact_transactions
+          environment_key: default
+          spark_python_task:
+            python_file: ../tests/integration/data_quality_checks.py
+            parameters:
+              - --catalog=${var.catalog}
+              - --schema-prefix=${var.schema_prefix}

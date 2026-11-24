@@ -9,8 +9,13 @@ How it works (a tiny Flyway-style migration runner):
     with a checksum, so it runs exactly once per environment.
   * Editing a file that has already been applied is an error: make a new
     V<next>__... file (e.g. ALTER TABLE ... ADD COLUMN) instead.
-  * Placeholders ${catalog}, ${bronze_schema}, ${silver_schema}, ${gold_schema}
-    and ${ops_schema} are filled in per environment.
+  * Statements in a file are not run as one transaction. If one fails, the
+    file isn't recorded and the whole file runs again next time. So a file
+    containing a statement that fails when run twice (ADD COLUMN, RENAME,
+    DROP without IF EXISTS, ADD CONSTRAINT, INSERT/UPDATE/DELETE/MERGE) must
+    contain only that one statement; discover() rejects it otherwise.
+  * Placeholders ${catalog}, ${bronze_schema}, ${silver_schema}, ${gold_schema},
+    ${landing_schema} and ${ops_schema} are filled in per environment.
 
 The pure functions below have no Spark dependency so they are unit tested in CI
 (tests/unit/test_apply_ddl.py).
@@ -27,6 +32,17 @@ from string import Template
 
 FILE_PATTERN = re.compile(r"^V(\d+)__([A-Za-z0-9_]+)\.sql$")
 LAYERS = ("bronze", "silver", "gold", "ops", "landing")
+
+# Statements that fail (or change data again) if a retry runs them twice.
+NOT_RETRY_SAFE = re.compile(
+    r"""
+      \bADD\s+(?:COLUMNS?\b|CONSTRAINT\b|\()(?!\s*IF\s+NOT\s+EXISTS)
+    | \bRENAME\s+(?:COLUMN|TO)\b
+    | \bDROP\s+(?:COLUMNS?|CONSTRAINT)\b(?!\s*IF\s+EXISTS)
+    | ^\s*(?:INSERT\s+INTO|UPDATE|DELETE|MERGE)\b
+    """,
+    re.IGNORECASE | re.VERBOSE,
+)
 
 
 @dataclass(frozen=True)
@@ -60,7 +76,19 @@ def discover(ddl_dir: Path) -> list[Migration]:
     duplicates = {v for v in versions if versions.count(v) > 1}
     if duplicates:
         raise ValueError(f"Duplicate DDL versions: {sorted(duplicates)}")
+    for m in migrations:
+        check_retry_safe(m)
     return migrations
+
+
+def check_retry_safe(m: Migration) -> None:
+    """A file with a statement that can't run twice must hold only that statement."""
+    statements = split_statements(m.sql)
+    if len(statements) > 1 and any(NOT_RETRY_SAFE.search(s) for s in statements):
+        raise ValueError(
+            f"{m.path.name}: statements like ADD COLUMN, RENAME, DROP or INSERT fail "
+            "if a partly applied file is retried. Put each one in its own V<next>__ file."
+        )
 
 
 def render(sql: str, params: dict[str, str]) -> str:
@@ -131,10 +159,7 @@ def main() -> None:
     applied = {r.version: r.checksum for r in spark.table(ledger).collect()}
 
     to_run = pending(discover(Path(args.ddl_dir)), applied)
-    if not to_run:
-        print("Schema is up to date.")
     for m in to_run:
-        print(f"Applying V{m.version}__{m.name}")
         for statement in split_statements(render(m.sql, params)):
             spark.sql(statement)
         spark.sql(

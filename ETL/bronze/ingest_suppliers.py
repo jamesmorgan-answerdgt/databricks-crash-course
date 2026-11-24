@@ -1,12 +1,19 @@
-"""Bronze layer: land samples.bakehouse.sales_suppliers as-is.
+"""Bronze layer: incrementally load new suppliers files from the landing volume.
 
-The target table is defined in SQL/ddl/V002__bronze_suppliers.sql; this script only
-moves data. Full reload each run (the source is small).
+Auto Loader picks up only files it hasn't seen before (tracked in the
+_checkpoints volume) and appends them, so bronze keeps every version of every
+row it has received. The schema comes from the bronze table itself, so a column
+added by a DDL migration is loaded with no change here. Anything in a file that
+doesn't fit the schema lands in _rescued_data instead of being dropped.
+
+Target table: SQL/ddl/V00100__bronze_suppliers.sql (+ V00104__bronze_suppliers_add_ingest_metadata.sql)
 """
 
 import argparse
 
 from pyspark.sql import SparkSession
+from pyspark.sql.functions import col, current_timestamp
+from pyspark.sql.types import StructType
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--catalog", required=True)
@@ -15,18 +22,25 @@ args = parser.parse_args()
 
 spark = SparkSession.builder.getOrCreate()
 target = f"`{args.catalog}`.`{args.schema_prefix}bronze`.suppliers"
+landing = f"/Volumes/{args.catalog}/{args.schema_prefix}landing/suppliers"
+checkpoint = f"/Volumes/{args.catalog}/{args.schema_prefix}landing/_checkpoints/bronze_suppliers"
 
-spark.sql(
-    f"""
-    INSERT OVERWRITE {target}
-    SELECT
-      CAST(supplierID AS BIGINT),
-      name, ingredient, continent, city, district, size,
-      CAST(longitude AS DOUBLE),
-      CAST(latitude AS DOUBLE),
-      CAST(approved AS STRING),
-      current_timestamp()
-    FROM samples.bakehouse.sales_suppliers
-    """
+METADATA = {"_ingested_at", "_source_file", "_rescued_data"}
+file_schema = StructType([f for f in spark.table(target).schema if f.name not in METADATA])
+
+(
+    spark.readStream.format("cloudFiles")
+    .option("cloudFiles.format", "parquet")
+    .option("rescuedDataColumn", "_rescued_data")
+    .schema(file_schema)
+    .load(landing)
+    .select(
+        "*",
+        current_timestamp().alias("_ingested_at"),
+        col("_metadata.file_path").alias("_source_file"),
+    )
+    .writeStream.option("checkpointLocation", checkpoint)
+    .trigger(availableNow=True)
+    .toTable(target)
+    .awaitTermination()
 )
-print(f"Loaded {spark.table(target).count()} rows into {target}")

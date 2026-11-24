@@ -1,5 +1,5 @@
 -- Landed copy of samples.bakehouse.sales_suppliers.
-CREATE TABLE IF NOT EXISTS `${catalog}`.`${bronze_schema}`.suppliers (
+CREATE OR REPLACE TABLE `${catalog}`.`${bronze_schema}`.suppliers (
   supplierID   BIGINT,
   name         STRING,
   ingredient   STRING,
