@@ -26,8 +26,6 @@ ALTER TABLE `${catalog}`.`${silver_schema}`.customers
 ALTER TABLE `${catalog}`.`${silver_schema}`.transactions
   SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
 
-ALTER TABLE `${catalog}`.`${gold_schema}`.asian_suppliers
-  SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
 ALTER TABLE `${catalog}`.`${gold_schema}`.dim_franchises
   SET TBLPROPERTIES ('delta.columnMapping.mode' = 'name');
 ALTER TABLE `${catalog}`.`${gold_schema}`.dim_customers
