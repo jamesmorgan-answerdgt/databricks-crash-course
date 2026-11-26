@@ -1,4 +1,6 @@
--- Landed copy of samples.bakehouse.sales_transactions.
+-- Append-only history of every transactions CSV file loaded from the landing volume
+-- (seeded from samples.bakehouse in dev/test). Landing keeps every file, so bronze
+-- can be rebuilt: changing its columns makes the next run reload it in full.
 CREATE OR REPLACE TABLE `${catalog}`.`${bronze_schema}`.transactions (
   transactionID BIGINT,
   customerID    BIGINT,
@@ -10,6 +12,7 @@ CREATE OR REPLACE TABLE `${catalog}`.`${bronze_schema}`.transactions (
   totalPrice    BIGINT,
   paymentMethod STRING,
   cardNumber    STRING,
-  _ingested_at  TIMESTAMP COMMENT 'When this row was loaded'
+  _ingested_at  TIMESTAMP COMMENT 'When this row was loaded',
+  _source_file  STRING    COMMENT 'Landing file this row came from'
 )
-COMMENT 'Bronze: transactions as landed from samples.bakehouse.sales_transactions (contains card numbers)';
+COMMENT 'Bronze: append-only history of transactions CSV files from the landing volume (contains card numbers)';

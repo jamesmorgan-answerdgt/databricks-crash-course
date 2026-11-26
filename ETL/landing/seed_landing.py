@@ -1,16 +1,18 @@
 """Landing: seed the landing volumes with the bakehouse samples (dev/test only).
 
-In a real environment an upstream system drops files into
-/Volumes/<catalog>/<prefix>landing/<source>/ and Auto Loader picks them up.
-Here, this task plays that system: the first time it runs in an environment it
-writes each samples.bakehouse table into its volume as Parquet, typed to match
-the bronze table. After that it does nothing, so bronze has nothing new to load
-until you drop another file in.
+In a real environment an upstream system drops each delivery, a complete extract,
+into its own sortable folder, e.g. /Volumes/<catalog>/<prefix>landing/<source>/2026-11-26/,
+and Auto Loader picks it up. Here, this task plays that system: the first time it
+runs in an environment it writes each samples.bakehouse table into a folder named
+after today's date, as CSV with a header row, using the bronze column names. After
+that it does nothing, so bronze has nothing new to load until you drop another
+delivery in.
 
 Controlled by the seed_landing bundle variable; it's off in prod.
 """
 
 import argparse
+import datetime
 import os
 
 from pyspark.sql import SparkSession
@@ -29,7 +31,7 @@ SOURCES = {
     "customers": "samples.bakehouse.sales_customers",
     "transactions": "samples.bakehouse.sales_transactions",
 }
-BRONZE_METADATA = {"_ingested_at", "_source_file", "_rescued_data"}
+BRONZE_METADATA = {"_ingested_at", "_source_file"}
 
 
 def has_files(path: str) -> bool:
@@ -47,5 +49,6 @@ if args.enabled.lower() == "true":
         (
             spark.table(source_table)
             .select([col(f.name).cast(f.dataType).alias(f.name) for f in fields])
-            .write.parquet(f"{landing}/seed")
+            .write.option("header", "true")
+            .csv(f"{landing}/{datetime.date.today().isoformat()}")
         )

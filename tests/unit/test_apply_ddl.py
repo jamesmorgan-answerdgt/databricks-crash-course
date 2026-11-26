@@ -20,6 +20,7 @@ REPO_DDL_DIR = Path(__file__).resolve().parents[2] / "SQL" / "ddl"
 CREATE_TABLE = re.compile(r"^CREATE\s+(?:OR\s+REPLACE\s+)?TABLE\s+(?:IF\s+NOT\s+EXISTS\s+)?(\S+)", re.I)
 ALTER_TABLE = re.compile(r"^ALTER\s+TABLE\s+(\S+)", re.I)
 COLUMN_MAPPING = re.compile(r"'delta\.columnMapping\.mode'\s*=\s*'name'", re.I)
+NEEDS_COLUMN_MAPPING = re.compile(r"\b(?:DROP\s+COLUMNS?|RENAME\s+COLUMN)\b", re.I)
 
 
 def test_every_table_ends_up_with_column_mapping():
@@ -42,6 +43,24 @@ def test_every_table_ends_up_with_column_mapping():
         f"Tables without column mapping: {missing}. Add "
         "TBLPROPERTIES ('delta.columnMapping.mode' = 'name') to their CREATE TABLE."
     )
+
+
+def test_rename_and_drop_column_only_after_column_mapping():
+    """DROP/RENAME COLUMN fail unless column mapping is already on for that table,
+    so in version order they must come after the file that turns it on."""
+    params = {"catalog": "c", **schema_names("dev_")}
+    has_mapping, too_early = {}, []
+    for m in discover(REPO_DDL_DIR):
+        for statement in split_statements(render(m.sql, params)):
+            if created := CREATE_TABLE.match(statement):
+                has_mapping[created.group(1)] = bool(COLUMN_MAPPING.search(statement))
+            elif altered := ALTER_TABLE.match(statement):
+                table = altered.group(1)
+                if COLUMN_MAPPING.search(statement):
+                    has_mapping[table] = True
+                elif NEEDS_COLUMN_MAPPING.search(statement) and not has_mapping.get(table):
+                    too_early.append(m.path.name)
+    assert not too_early, f"Renumber these to after column mapping is enabled: {too_early}"
 
 
 @pytest.mark.parametrize(

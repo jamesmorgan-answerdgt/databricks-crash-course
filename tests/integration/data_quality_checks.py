@@ -54,13 +54,16 @@ GOLD = {
     "fact_transactions": "transaction_id",
 }
 
+quarantine_log = table("landing", "quarantine_log")
+
 checks = {}
 for source, key in SOURCES.items():
     checks[f"bronze.{source} is not empty"] = is_not_empty(table("bronze", source))
-    # Rescued data means the landing files no longer match the bronze schema
-    # (new, renamed or retyped source columns): add a DDL migration for it.
-    checks[f"bronze.{source} has no rescued data"] = scalar(
-        f"SELECT count(*) FROM {table('bronze', source)} WHERE _rescued_data IS NOT NULL"
+    # A quarantined file didn't match the bronze schema and wasn't loaded. Fix it
+    # (or add a DDL migration), drop it back into landing under a new name, and
+    # set resolved_at in the log.
+    checks[f"landing.{source} has no unresolved quarantined files"] = scalar(
+        f"SELECT count(*) FROM {quarantine_log} WHERE source = '{source}' AND resolved_at IS NULL"
     ) == 0
     checks[f"silver.{source} is not empty"] = is_not_empty(table("silver", source))
     checks[f"silver.{source}.{key} is unique"] = is_unique(table("silver", source), key)
@@ -68,8 +71,7 @@ for source, key in SOURCES.items():
 for name, key in GOLD.items():
     checks[f"gold.{name}.{key} is unique"] = is_unique(table("gold", name), key)
 
-silver_suppliers = table("silver", "suppliers")
-fact = table("gold", "fact_transactions")
+fact =table("gold", "fact_transactions")
 
 checks["gold.fact_transactions has every silver transaction"] = scalar(
     f"SELECT count(*) FROM {fact}"

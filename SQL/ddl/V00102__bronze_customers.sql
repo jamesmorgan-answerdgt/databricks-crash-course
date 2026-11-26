@@ -1,4 +1,6 @@
--- Landed copy of samples.bakehouse.sales_customers.
+-- Append-only history of every customers CSV file loaded from the landing volume
+-- (seeded from samples.bakehouse in dev/test). Landing keeps every file, so bronze
+-- can be rebuilt: changing its columns makes the next run reload it in full.
 CREATE OR REPLACE TABLE `${catalog}`.`${bronze_schema}`.customers (
   customerID      BIGINT,
   first_name      STRING,
@@ -12,6 +14,7 @@ CREATE OR REPLACE TABLE `${catalog}`.`${bronze_schema}`.customers (
   continent       STRING,
   postal_zip_code STRING,
   gender          STRING,
-  _ingested_at    TIMESTAMP COMMENT 'When this row was loaded'
+  _ingested_at    TIMESTAMP COMMENT 'When this row was loaded',
+  _source_file    STRING    COMMENT 'Landing file this row came from'
 )
-COMMENT 'Bronze: customers as landed from samples.bakehouse.sales_customers';
+COMMENT 'Bronze: append-only history of customers CSV files from the landing volume';
